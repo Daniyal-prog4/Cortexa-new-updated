@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Cortexa",
+  "version": "0.1.0",
+  "identifier": "app.cortexa.desktop",
+  "build": {
+    "beforeDevCommand": "yarn --cwd ../frontend start",
+    "beforeBuildCommand": "yarn --cwd ../frontend build",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../frontend/build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Cortexa",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 780,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#04060b"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": ["icons/icon.ico"],
+    "category": "Productivity",
+    "shortDescription": "Cortexa — Windows-first AI desktop assistant",
+    "longDescription": "Cortexa is a Windows-first AI desktop assistant with secure local tool execution, agents, memory, and a beautiful futuristic interface."
+  }
+}

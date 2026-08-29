@@ -1,0 +1,48 @@
+{
+  "summary": "Full backend + frontend e2e test of Cortexa. Created /app/backend/tests/backend_test.py (28 pytest cases) covering health, auth (register/login/me/401 matrix on 11 protected endpoints), devices, agents CRUD + cross-user isolation, memory CRUD + user scoping, tasks add/list/patch, telemetry ranges, real Claude Sonnet 4.6 chat + session reuse + chat history + activity logging. Result: 27/28 passed (96%). Frontend Playwright: registered a fresh user -> home, verified greeting/orb/CTAs/5 quick actions/command bar, live telemetry refresh (CPU 28%->36%), 4 right-panel agents, real chat round-trip (bubble-user-0 + bubble-bot-0 'Hello there, friend!'), all 6 sidebar nav routes, Agents create+delete, Memory add+delete, Tasks add + mark done, all 8 Settings tabs, and signout -> /auth. All frontend flows passed (100%).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PATCH /api/tasks/{id}?status_value=done", "issue": "Returns 500 (not 404) for a non-existent/other-user task id. Backend log: 'TypeError: server.Task() argument after ** must be a mapping, not NoneType' - update_task builds Task(**doc) without checking doc is None. Also status_value is unvalidated free text (any string accepted, e.g. status_value=banana)."},
+      {"endpoint": "POST /api/auth/register vs GET /api/auth/me", "issue": "Register response echoes the email in the original casing while the DB and /auth/me return it lowercased -> inconsistent user.email between register and me."},
+      {"endpoint": "DELETE /api/agents/{id}, DELETE /api/memory/{id}", "issue": "Always returns {ok:true} even when nothing was deleted (unknown id or another user's resource). Should return 404 on deleted_count == 0. (Ownership scoping itself is correct - verified cross-user delete does not affect data.)"},
+      {"endpoint": "POST /api/chat", "issue": "History replay re-sends every stored user turn to the LLM on each request (loop of send_message before the actual message). Token cost and latency grow linearly with conversation length and assistant turns are never replayed, so context is lossy/incorrect. Should pass prior turns as message history instead of re-invoking the model."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Right panel - Recent Activity", "issues": ["When /api/activity is empty the panel renders hardcoded fake entries ('VS Code opened', 'Arduino project loaded', 'File organized', 'System cleaned') with fake relative timestamps. Misleading; should show an empty state."]},
+      {"screen": "Right panel - Your Agents", "issues": ["Agent name and role wrap to 2-3 lines in the 320px column ('Developer Agent' / 'Coding, VS Code, Git'), making rows uneven. Consider truncation with ellipsis."]},
+      {"screen": "Settings page", "issues": ["Tab labels (Account/AI/Voice/...) use var(--text-dim) on near-black - low contrast, likely below WCAG AA.", "Content area is almost entirely empty on the About tab (one line of text in a full-height panel) - large dead space."]},
+      {"screen": "Sidebar user chip", "issues": ["data-testid=\"user-menu-trigger\" immediately calls logout() on click with no menu or confirmation - accidental sign-out risk and the testid name does not match behaviour."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix PATCH /api/tasks/{id}: return 404 when the task doc is None; validate status_value against pending|running|done|failed.",
+    "Normalize email casing in the register response (use body.email.lower()) so it matches /auth/me.",
+    "Return 404 from DELETE /api/agents/{id} and DELETE /api/memory/{id} when deleted_count == 0.",
+    "Rework /api/chat history handling to not re-send prior user turns to the LLM (cost/latency/context bug).",
+    "Replace the hardcoded fake Recent Activity fallback in RightPanel.jsx with a real empty state.",
+    "Populate /app/memory/test_credentials.md - it is currently empty (only comment headers); daniyal@cortexa.ai / CortexaPass!23 was supplied via the review request only.",
+    "Optional: raise contrast of Settings tab labels; make user-menu-trigger open a menu instead of instant logout."
+  ],
+  "critical_code_review_comments": [
+    "update_task does Task(**doc) without a None guard -> guaranteed 500 on any unknown id (confirmed in backend.err.log).",
+    "/api/chat replays history by calling send_message per stored user message - O(n) LLM calls per request and assistant turns are dropped.",
+    "Delete endpoints ignore delete_one().deleted_count so clients cannot distinguish success from no-op.",
+    "JWT_SECRET falls back to the literal 'dev-secret' when unset; fail fast instead of shipping a default secret.",
+    "@app.on_event('shutdown') is deprecated in current FastAPI; migrate to a lifespan handler.",
+    "RightPanel.jsx swallows all API errors with `catch (_) {}` - no error state is ever surfaced to the user if telemetry/agents/activity calls fail."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "96% (27/28)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Registered throwaway users TEST_*@cortexaqa.com (pytest) and qa766897@cortexaqa.com (Playwright). Test agents/memory/tasks were created and deleted; one task 'QA_task_item' (status done) remains on the daniyal@cortexa.ai account.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "/app/memory/test_credentials.md is EMPTY - please populate. Working creds used: daniyal@cortexa.ai / CortexaPass!23 (login verified).",
+  "context_for_next_testing_agent": "Backend suite lives at /app/backend/tests/backend_test.py; run with `cd /app/backend && python -m pytest tests/backend_test.py -v` (pytest.ini already adds xdist). Note EmailStr rejects the .test TLD, so test emails must use a real-looking TLD (I use @cortexaqa.com). Only failing test is test_task_update_missing_id (expects 404, backend returns 500) - it should pass once the None guard is added. Chat tests hit the real LLM and take ~10-20s. All frontend testids in the review request exist and work; telemetry testids are telemetry-cpu-usage / ram-usage / disk-usage / battery.",
+  "rca_of_the_issue": "PATCH /api/tasks/{id} 500: update_task runs update_one then find_one; when the id does not exist (or belongs to another user) find_one returns None and Task(**None) raises TypeError, which FastAPI surfaces as a 500. Repro: PATCH /api/tasks/<random-uuid>?status_value=done with a valid Bearer token. Fix: if doc is None -> raise HTTPException(404, 'Task not found')."
+}
