@@ -47,7 +47,7 @@ export default function Memory() {
         )}
         {items.map((m) => (
           <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", borderBottom: "1px solid var(--border-soft)" }} data-testid={`memory-row-${m.key}`}>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(34,211,238,0.1)", border: "1px solid var(--border-cyan)", display: "grid", placeItems: "center", color: "var(--cyan-1)" }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(var(--accent-rgb),0.1)", border: "1px solid var(--border-accent)", display: "grid", placeItems: "center", color: "var(--accent-1)" }}>
               <Database size={16} />
             </div>
             <div style={{ flex: 1 }}>

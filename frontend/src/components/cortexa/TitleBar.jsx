@@ -1,7 +1,9 @@
 import React from "react";
-import { Search, Bell, Circle, Minus, Square, X, Command } from "lucide-react";
+import { Search, Bell, Circle, Minus, Square, X, Command, Mic } from "lucide-react";
+import { useWake } from "@/context/WakeWordContext";
 
 export default function TitleBar({ online = true }) {
+  const wake = useWake();
   return (
     <div
       className="cx-panel"
@@ -24,6 +26,12 @@ export default function TitleBar({ online = true }) {
         </span>
       </div>
 
+      {wake?.enabled && (
+        <span className="wake-chip" data-testid="wake-indicator">
+          <span className="pulse-dot" /> <Mic size={11} /> Wake word
+        </span>
+      )}
+
       <div style={{ flex: 1, maxWidth: 480, marginLeft: 24 }}>
         <div
           style={{
@@ -32,7 +40,7 @@ export default function TitleBar({ online = true }) {
             gap: 10,
             padding: "8px 14px",
             background: "rgba(5,9,18,0.55)",
-            border: "1px solid var(--border-cyan)",
+            border: "1px solid var(--border-accent)",
             borderRadius: 999,
           }}
         >
@@ -65,13 +73,13 @@ export default function TitleBar({ online = true }) {
             width: 16,
             height: 16,
             borderRadius: 999,
-            background: "#22d3ee",
-            color: "#04121b",
+            background: "var(--accent-1)",
+            color: "#050914",
             fontSize: 10,
             fontWeight: 700,
             display: "grid",
             placeItems: "center",
-            boxShadow: "0 0 8px rgba(34,211,238,0.7)",
+            boxShadow: "0 0 8px rgba(var(--accent-rgb),0.7)",
           }}
         >
           3

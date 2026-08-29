@@ -8,9 +8,9 @@ function Stat({ Icon, label, value, color }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-dim)", fontSize: 13 }}>
         <Icon size={16} color={color} /> {label}
       </div>
-      <div style={{ fontSize: 40, marginTop: 6, fontWeight: 600, color, textShadow: `0 0 14px ${color}55` }}>{value}%</div>
+      <div style={{ fontSize: 40, marginTop: 6, fontWeight: 600, color, textShadow: `0 0 14px color-mix(in srgb, ${color} 35%, transparent)` }}>{value}%</div>
       <div className="cx-progress" style={{ marginTop: 8 }}>
-        <div className="fill" style={{ width: `${value}%`, background: `linear-gradient(90deg, ${color}88, ${color})` }} />
+        <div className="fill" style={{ width: `${value}%`, background: `linear-gradient(90deg, color-mix(in srgb, ${color} 55%, transparent), ${color})` }} />
       </div>
     </div>
   );
@@ -31,8 +31,8 @@ export default function System() {
       <p style={{ color: "var(--text-dim)", margin: "6px 0 22px" }}>Live telemetry from your Cortexa desktop agent</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-        <Stat Icon={Cpu} label="CPU Usage" value={t.cpu} color="#22d3ee" />
-        <Stat Icon={MemoryStick} label="RAM Usage" value={t.ram} color="#38bdf8" />
+        <Stat Icon={Cpu} label="CPU Usage" value={t.cpu} color="var(--accent-1)" />
+        <Stat Icon={MemoryStick} label="RAM Usage" value={t.ram} color="var(--accent-soft)" />
         <Stat Icon={HardDrive} label="Disk Usage" value={t.disk} color="#a78bfa" />
         <Stat Icon={Battery} label="Battery" value={t.battery} color="#34d399" />
       </div>

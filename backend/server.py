@@ -8,6 +8,7 @@ Provides:
 - Simulated system telemetry
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -17,13 +18,15 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os
+import re
+import json
 import uuid
 import logging
 import random
 import bcrypt
 import jwt
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta
 
 # ---------- Setup ----------
 ROOT_DIR = Path(__file__).parent
@@ -431,6 +434,150 @@ async def get_session(session_id: str, user: dict = Depends(current_user)):
         {"user_id": user["id"], "session_id": session_id}, {"_id": 0}
     ).sort("created_at", 1).to_list(200)
     return docs
+
+
+# ---------- Streaming chat (SSE) + permission engine ----------
+RISKY_PATTERNS = [
+    (re.compile(r"\b(write|create|save|edit|modify|update)\b.{0,40}\b(file|document|config|\.txt|\.json|\.md)\b", re.I), "write_file", "Write contents to a file on this machine"),
+    (re.compile(r"\b(delete|remove|erase|wipe|trash)\b.{0,60}(\.\w{1,5}\b|\b(file|files|folder|directory|photos|documents|downloads)\b)", re.I), "delete_file", "Delete a file or folder from disk"),
+    (re.compile(r"\b(move|rename)\b.{0,60}(\.\w{1,5}\b|\b(file|files|folder|directory)\b)", re.I), "move_file", "Move or rename a file on disk"),
+    (re.compile(r"\b(run|execute|launch)\b.{0,60}\b(script|command|terminal|powershell|shell|npm|pip|yarn|cargo|python|node|build|\.bat|\.ps1|\.sh|\.exe)\b", re.I), "run_command", "Run a script or shell command"),
+    (re.compile(r"\binstall\b\s+\S+", re.I), "install_app", "Install software on this machine"),
+]
+
+BLOCKED_PATTERNS = [
+    (re.compile(r"\bformat\b.{0,30}\b(disk|drive|c:|ssd|hard ?drive)\b", re.I), "format_disk", "Format a disk or drive"),
+    (re.compile(r"\brm\s+-rf\b|\bdel\s+/[sq]\b|\bmkfs\b", re.I), "raw_shell", "Raw destructive shell command"),
+    (re.compile(r"\b(delete|remove|wipe|erase)\b.{0,40}\b(system32|windows folder|registry|boot ?loader|all (my )?(files|photos|data|documents))\b", re.I), "system_wipe", "Destructive system-level deletion"),
+    (re.compile(r"\b(disable|turn off)\b.{0,30}\b(antivirus|firewall|defender)\b", re.I), "security_off", "Disable security protections"),
+]
+
+SIMULATED_RESULTS = {
+    "write_file": "File written successfully · 1 file changed (simulated)",
+    "delete_file": "Item moved to Recycle Bin (simulated)",
+    "move_file": "File moved to the requested destination (simulated)",
+    "run_command": "Command completed · exit code 0 (simulated)",
+    "install_app": "Installer completed successfully (simulated)",
+}
+
+
+def detect_tool_request(message: str) -> Optional[dict]:
+    for pat, tool, desc in BLOCKED_PATTERNS:
+        if pat.search(message):
+            return {"tool": tool, "risk": "BLOCKED", "description": desc}
+    for pat, tool, desc in RISKY_PATTERNS:
+        if pat.search(message):
+            return {"tool": tool, "risk": "CONFIRM", "description": desc}
+    return None
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+@api.post("/chat/stream")
+async def chat_stream(body: ChatRequest, user: dict = Depends(current_user)):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key not configured")
+
+    session_id = body.session_id or str(uuid.uuid4())
+    tool = detect_tool_request(body.message)
+    system = CORTEXA_SYSTEM + " Reply in plain text only — never use markdown formatting such as **bold**, backticks, asterisk bullets or headers."
+    if tool and tool["risk"] == "BLOCKED":
+        system += (
+            f" IMPORTANT: The user's request maps to the local tool '{tool['tool']}' which is BLOCKED by the security policy "
+            "and will never be executed under any circumstances. Politely inform the user that this action is blocked and "
+            "suggest a safer alternative if one exists."
+        )
+    elif tool:
+        system += (
+            f" IMPORTANT: The user's request maps to the local tool '{tool['tool']}' which is CONFIRM-risk. "
+            "A permission card has been raised in the UI — briefly acknowledge the request and tell the user to "
+            "confirm or cancel the permission card before anything runs. Never pretend the action already happened."
+        )
+
+    chat_client = (
+        LlmChat(api_key=EMERGENT_LLM_KEY, session_id=session_id, system_message=system)
+        .with_model("anthropic", "claude-sonnet-4-6")
+    )
+
+    user_id = user["id"]
+    message = body.message
+
+    async def gen():
+        yield _sse({"type": "session", "session_id": session_id})
+        full = ""
+        had_error = False
+        try:
+            async for ev in chat_client.stream_message(UserMessage(text=message)):
+                if isinstance(ev, TextDelta) and ev.content:
+                    full += ev.content
+                    yield _sse({"type": "delta", "text": ev.content})
+        except Exception as e:
+            had_error = True
+            logger.exception("LLM stream error")
+            yield _sse({"type": "error", "detail": str(e)})
+
+        now = datetime.now(timezone.utc).isoformat()
+        docs = [{"id": str(uuid.uuid4()), "user_id": user_id, "session_id": session_id, "role": "user", "content": message, "created_at": now}]
+        if full:
+            docs.append({"id": str(uuid.uuid4()), "user_id": user_id, "session_id": session_id, "role": "assistant", "content": full, "created_at": now})
+        await db.chat_messages.insert_many(docs)
+        await _log_activity(user_id, "chat", f"Chat: {message[:48]}", icon="message")
+
+        if tool and not had_error:
+            blocked = tool["risk"] == "BLOCKED"
+            req = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "session_id": session_id,
+                "tool": tool["tool"],
+                "risk": tool["risk"],
+                "description": tool["description"],
+                "command": message[:140],
+                "status": "blocked" if blocked else "pending",
+                "created_at": now,
+            }
+            if blocked:
+                req["result"] = "Blocked by security policy — this action will never run."
+                await _log_activity(user_id, "tool", f"Tool blocked: {tool['tool']}", icon="shield")
+            await db.tool_requests.insert_one(dict(req))
+            yield _sse({"type": "tool_request", "request": {k: req[k] for k in ("id", "tool", "risk", "description", "command", "status")}})
+
+        yield _sse({"type": "done"})
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+class ToolResolve(BaseModel):
+    approved: bool
+
+
+@api.post("/tools/{request_id}/resolve")
+async def resolve_tool(request_id: str, body: ToolResolve, user: dict = Depends(current_user)):
+    doc = await db.tool_requests.find_one({"id": request_id, "user_id": user["id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Tool request not found")
+    if doc["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Tool request already resolved")
+
+    new_status = "executed" if body.approved else "denied"
+    result = SIMULATED_RESULTS.get(doc["tool"], "Action completed (simulated)") if body.approved else "Cancelled by user — nothing was executed."
+    await db.tool_requests.update_one(
+        {"id": request_id},
+        {"$set": {"status": new_status, "result": result, "resolved_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    await _log_activity(
+        user["id"],
+        "tool",
+        f"Tool {new_status}: {doc['tool']}",
+        icon="check" if body.approved else "shield",
+    )
+    return {"id": request_id, "status": new_status, "result": result}
 
 
 # ---------- Register router ----------

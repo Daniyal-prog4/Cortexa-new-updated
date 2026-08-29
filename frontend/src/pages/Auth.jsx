@@ -39,7 +39,7 @@ export default function Auth() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, marginBottom: 26 }}>
           <CortexaLogo size={64} />
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: "0.14em", color: "#22d3ee", textShadow: "0 0 14px rgba(34,211,238,0.6)" }}>CORTEXA</div>
+            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: "0.14em", color: "var(--accent-1)", textShadow: "0 0 14px rgba(var(--accent-rgb),0.6)" }}>CORTEXA</div>
             <div style={{ color: "var(--text-dim)", marginTop: 6, fontSize: 14 }}>
               {mode === "login" ? "Activate your device to continue" : "Create your Cortexa account"}
             </div>
@@ -95,8 +95,8 @@ export default function Auth() {
             style={{
               justifyContent: "center",
               marginTop: 6,
-              background: "linear-gradient(135deg, rgba(34,211,238,0.22), rgba(6,182,212,0.12))",
-              borderColor: "rgba(34,211,238,0.5)",
+              background: "linear-gradient(135deg, rgba(var(--accent-rgb),0.22), rgba(var(--accent-rgb),0.12))",
+              borderColor: "rgba(var(--accent-rgb),0.5)",
               padding: "12px 18px",
               fontSize: 16,
             }}
@@ -108,9 +108,9 @@ export default function Auth() {
 
         <div style={{ textAlign: "center", marginTop: 20, color: "var(--text-dim)", fontSize: 14 }}>
           {mode === "login" ? (
-            <>New here? <button type="button" onClick={() => setMode("register")} style={{ background: "none", border: 0, color: "var(--cyan-1)", cursor: "pointer" }} data-testid="switch-register">Create account</button></>
+            <>New here? <button type="button" onClick={() => setMode("register")} style={{ background: "none", border: 0, color: "var(--accent-1)", cursor: "pointer" }} data-testid="switch-register">Create account</button></>
           ) : (
-            <>Already have an account? <button type="button" onClick={() => setMode("login")} style={{ background: "none", border: 0, color: "var(--cyan-1)", cursor: "pointer" }} data-testid="switch-login">Sign in</button></>
+            <>Already have an account? <button type="button" onClick={() => setMode("login")} style={{ background: "none", border: 0, color: "var(--accent-1)", cursor: "pointer" }} data-testid="switch-login">Sign in</button></>
           )}
         </div>
       </div>

@@ -4,7 +4,7 @@ import { Plus, CheckSquare, Play, Trash2 } from "lucide-react";
 
 const statusColor = {
   pending: { fg: "#fbbf24", bg: "rgba(251,191,36,0.1)", bd: "rgba(251,191,36,0.3)" },
-  running: { fg: "#22d3ee", bg: "rgba(34,211,238,0.1)", bd: "rgba(34,211,238,0.3)" },
+  running: { fg: "var(--accent-1)", bg: "rgba(var(--accent-rgb),0.1)", bd: "rgba(var(--accent-rgb),0.3)" },
   done:    { fg: "#34d399", bg: "rgba(52,211,153,0.1)", bd: "rgba(52,211,153,0.3)" },
   failed:  { fg: "#f87171", bg: "rgba(248,113,113,0.1)", bd: "rgba(248,113,113,0.3)" },
 };

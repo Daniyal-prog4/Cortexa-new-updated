@@ -74,7 +74,7 @@ export default function Sidebar() {
           gap: 12,
           padding: 12,
           borderRadius: 14,
-          border: "1px solid var(--border-cyan)",
+          border: "1px solid var(--border-accent)",
           cursor: "pointer",
           background: "rgba(11,17,34,0.6)",
         }}
@@ -85,18 +85,18 @@ export default function Sidebar() {
             width: 36,
             height: 36,
             borderRadius: 10,
-            background: "linear-gradient(135deg, #22d3ee, #0891b2)",
+            background: "linear-gradient(135deg, var(--accent-1), var(--accent-2))",
             display: "grid",
             placeItems: "center",
             fontWeight: 700,
-            color: "#04121b",
-            boxShadow: "0 0 14px rgba(34,211,238,0.5)",
+            color: "#050914",
+            boxShadow: "0 0 14px rgba(var(--accent-rgb),0.5)",
           }}
         >
           {initial}
         </div>
         <div style={{ textAlign: "left", flex: 1 }}>
-          <div style={{ fontSize: 15, color: "#e6f6ff" }}>{user?.name || "Guest"}</div>
+          <div style={{ fontSize: 15, color: "var(--text)" }}>{user?.name || "Guest"}</div>
           <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{user?.plan || "Pro"} Plan</div>
         </div>
         <ChevronDown size={16} color="var(--text-dim)" />

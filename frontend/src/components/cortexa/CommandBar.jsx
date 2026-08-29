@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Mic } from "lucide-react";
-import { api } from "@/lib/api";
+import { useWake } from "@/context/WakeWordContext";
 
-export default function CommandBar({ onSent, listening, setListening }) {
+export default function CommandBar({ onSend, busy, listening, setListening }) {
   const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
+  const { dictating } = useWake() || {};
 
   useEffect(() => {
     const handler = (e) => {
@@ -18,22 +18,14 @@ export default function CommandBar({ onSent, listening, setListening }) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const send = async (text) => {
-    const msg = (text ?? value).trim();
+  const send = () => {
+    const msg = value.trim();
     if (!msg || busy) return;
     setValue("");
-    setBusy(true);
-    try {
-      const sid = localStorage.getItem("cortexa_session") || undefined;
-      const { data } = await api.post("/chat", { message: msg, session_id: sid });
-      localStorage.setItem("cortexa_session", data.session_id);
-      onSent?.({ user: msg, reply: data.reply, session_id: data.session_id });
-    } catch (e) {
-      onSent?.({ user: msg, reply: "⚠️ Sorry, I couldn't reach the assistant.", error: true });
-    } finally {
-      setBusy(false);
-    }
+    onSend?.(msg);
   };
+
+  const micActive = listening || dictating;
 
   return (
     <div
@@ -50,9 +42,9 @@ export default function CommandBar({ onSent, listening, setListening }) {
       <button
         onClick={() => setListening?.(!listening)}
         className="win-btn"
-        title="Push to talk (simulated)"
+        title={micActive ? "Listening… click to stop" : "Speak to Cortexa"}
         data-testid="mic-btn"
-        style={{ color: listening ? "#22d3ee" : "var(--text-dim)" }}
+        style={{ color: micActive ? "var(--accent-1)" : "var(--text-dim)" }}
       >
         <Mic size={18} />
       </button>
@@ -62,7 +54,7 @@ export default function CommandBar({ onSent, listening, setListening }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && send()}
-        placeholder="Type your command here…"
+        placeholder={micActive ? "Listening… say your command" : "Type your command here…"}
         style={{
           flex: 1,
           background: "transparent",
@@ -75,7 +67,7 @@ export default function CommandBar({ onSent, listening, setListening }) {
         }}
       />
       <button
-        onClick={() => send()}
+        onClick={send}
         disabled={busy}
         className="win-btn"
         data-testid="send-btn"
@@ -83,9 +75,9 @@ export default function CommandBar({ onSent, listening, setListening }) {
           width: 40,
           height: 36,
           borderRadius: 10,
-          border: "1px solid rgba(34,211,238,0.5)",
-          background: "rgba(34,211,238,0.12)",
-          color: "#22d3ee",
+          border: "1px solid rgba(var(--accent-rgb),0.5)",
+          background: "rgba(var(--accent-rgb),0.12)",
+          color: "var(--accent-1)",
         }}
         title="Send"
       >

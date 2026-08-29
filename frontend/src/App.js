@@ -1,6 +1,8 @@
-import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { WakeWordProvider, useWake } from "@/context/WakeWordContext";
 import Sidebar from "@/components/cortexa/Sidebar";
 import TitleBar from "@/components/cortexa/TitleBar";
 import RightPanel from "@/components/cortexa/RightPanel";
@@ -59,6 +61,16 @@ function AppRoutes() {
   );
 }
 
+function WakeWordManager() {
+  const wake = useWake();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (wake?.wakeSignal > 0) navigate("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wake?.wakeSignal]);
+  return null;
+}
+
 function AuthRedirect({ children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
@@ -69,11 +81,16 @@ function AuthRedirect({ children }) {
 export default function App() {
   return (
     <div className="App" style={{ height: "100vh" }}>
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <WakeWordProvider>
+            <BrowserRouter>
+              <WakeWordManager />
+              <AppRoutes />
+            </BrowserRouter>
+          </WakeWordProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </div>
   );
 }

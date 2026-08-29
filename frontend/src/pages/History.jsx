@@ -13,7 +13,7 @@ export default function History() {
         {items.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "var(--text-dim)" }}><HIcon /> <div>No history yet — start chatting with Cortexa.</div></div>}
         {items.map((it) => (
           <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border-soft)" }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(34,211,238,0.1)", border: "1px solid var(--border-cyan)", display: "grid", placeItems: "center", color: "var(--cyan-1)" }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(var(--accent-rgb),0.1)", border: "1px solid var(--border-accent)", display: "grid", placeItems: "center", color: "var(--accent-1)" }}>
               <Sparkles size={14} />
             </div>
             <div style={{ flex: 1 }}>{it.title}</div>

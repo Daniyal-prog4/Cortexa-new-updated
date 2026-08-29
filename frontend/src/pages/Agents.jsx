@@ -4,7 +4,7 @@ import { Plus, Users, Trash2, FileCode, Sparkles, Cpu, FolderOpen } from "lucide
 
 const iconMap = { code: FileCode, search: Sparkles, cog: Cpu, folder: FolderOpen };
 const colorMap = {
-  cyan: { fg: "#22d3ee", bg: "rgba(34,211,238,0.12)", bd: "rgba(34,211,238,0.4)" },
+  cyan: { fg: "var(--accent-1)", bg: "rgba(var(--accent-rgb),0.12)", bd: "rgba(var(--accent-rgb),0.4)" },
   violet: { fg: "#a78bfa", bg: "rgba(167,139,250,0.12)", bd: "rgba(167,139,250,0.4)" },
   blue: { fg: "#60a5fa", bg: "rgba(96,165,250,0.12)", bd: "rgba(96,165,250,0.4)" },
   amber: { fg: "#fbbf24", bg: "rgba(251,191,36,0.12)", bd: "rgba(251,191,36,0.4)" },
@@ -85,7 +85,7 @@ export default function Agents() {
               {a.tools?.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
                   {a.tools.map((t) => (
-                    <span key={t} style={{ padding: "3px 10px", fontSize: 11, borderRadius: 999, background: "rgba(34,211,238,0.06)", border: "1px solid var(--border-cyan)", color: "var(--text-dim)" }}>{t}</span>
+                    <span key={t} style={{ padding: "3px 10px", fontSize: 11, borderRadius: 999, background: "rgba(var(--accent-rgb),0.06)", border: "1px solid var(--border-accent)", color: "var(--text-dim)" }}>{t}</span>
                   ))}
                 </div>
               )}
