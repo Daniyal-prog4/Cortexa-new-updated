@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration-3 security-hardening verification of Cortexa. Created /app/backend/tests/test_security.py (28 pytest cases) — ALL 28 PASSED. Verified: (1) JWT rotation — backend/.env JWT_SECRET is 64 chars, no code fallback (os.environ['JWT_SECRET']), no old-secret literals in source; fresh login token -> /api/auth/me 200 with correct email and no password/_id leakage; tokens forged with BOTH old secrets ('cortexa-super-secret-jwt-key-change-in-prod' and 'dev-secret') rejected 401; malformed bearer -> 401; stored password hash starts with $2b$. (2) Brute-force lockout — registered throwaway sectest_<rand>@cortexa.ai, correct login OK, then 5 wrong passwords (401s), 6th attempt WITH CORRECT password -> 429 'Too many failed attempts. Try again in a few minutes.'; cleaned up login_attempts + throwaway user afterwards and re-verified daniyal@cortexa.ai still logs in 200 (login_attempts count now 0, sectest users 0). (3) LLM rate limiter tested in-process (no real LLM burn): LLM_RATE_LIMIT=20 / window=300, calls 1-20 pass and 21st raises HTTPException 429 'Rate limit reached'; also verified 300s sliding-window eviction of stale timestamps. (4) Length cap — 4100-char message -> 422 on both /api/chat and /api/chat/stream; empty message -> 422; exactly 4000 chars accepted and streams (session event received). (5) Happy-path SSE still correct: session -> N deltas -> done, content-type text/event-stream, no error events; unauthenticated stream -> 403/401. (6) Error redaction confirmed in source (generic 'Assistant temporarily unavailable...' in both JSON 502 and SSE error event, no str(e) in chat handlers). (7) CORS: with CORS_ORIGINS='*' the response carries NO Access-Control-Allow-Credentials header. Regression with fresh token: /api/agents, /api/tasks, /api/system/telemetry, /api/activity all 200 with no _id leakage; all four return 401/403 unauthenticated; /api/ health 200. FRONTEND (Playwright 1920x1080): planted an invalid token in localStorage -> app correctly routed to /auth (two expected 401 console entries from that probe); UI login with daniyal@cortexa.ai succeeded -> landed on / with cortexa-core orb rendered; sent ONE chat message ('Say hi in three words.') -> user bubble + streamed assistant reply 'Hey there, friend!' rendered; 0 error elements on page and no unexpected console/page errors. Total real LLM calls this run: 3 (well under the 20/5min limit).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/register", "issue": "Register seeds 4 default agents per user with no cleanup path; test_database now has 8 users and 40 agent docs accumulated from prior test runs (orphaned data). Not a functional defect, but consider a delete-account/cleanup route or test-data pruning."},
+      {"endpoint": "POST /api/auth/login", "issue": "Lockout key is {ip}:{email} and the counter is reset to 0 when locked_until is set, so after the 15-min window expires the attacker gets a fresh full 5-attempt budget with no escalation/backoff. Acceptable for MVP; note it."},
+      {"endpoint": "POST /api/auth/login", "issue": "Client IP is taken from the first X-Forwarded-For hop, which is client-spoofable behind the ingress — an attacker can rotate the header to bypass the per-IP lockout. Consider also keeping a per-email-only counter as a second key."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security.py",
+    "/app/test_reports/pytest/it3_security.xml"
+  ],
+  "action_items": [
+    "No blocking issues from this security round — all 6 hardening items verified working.",
+    "Optional: add a per-email (IP-independent) failure counter so header-spoofed X-Forwarded-For cannot reset the lockout budget.",
+    "Optional: consider exponential backoff instead of a fixed 15-min lockout that resets the counter to 0.",
+    "Still open from iterations 1-2 (not retested this round): risky-action classifier gaps (rm -rf / install / format bypass the permission card), markdown not rendered in bot bubbles, resolveTool catch has no error state, PATCH /api/tasks/{id} 500 on unknown id, delete endpoints return ok:true for no-ops, register/me email casing, index-based chat bubble testids, onDone fired twice in lib/stream.js."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 658 lines — approaching the 700-line split threshold; consider extracting auth/abuse-protection and the chat/SSE layer into modules before adding more features.",
+    "check_llm_rate uses an in-process defaultdict(deque), so the 20/5min limit is per worker process and resets on reload — fine for single-worker preview, but document that it is not durable/multi-replica safe.",
+    "record_login_failure does a find_one then update_one (read-modify-write) — under concurrent login floods this can undercount; a single $inc upsert would be atomic.",
+    "app.on_event('startup'/'shutdown') is deprecated in current FastAPI; migrate to the lifespan handler to avoid future breakage."
+  ],
+  "updated_files": ["/app/backend/tests/test_security.py"],
+  "success_rate": {"backend": "100% (28/28 iteration-3 security pytest cases)", "frontend": "100% of requested regression flows (stale-token routing, UI login, one streamed chat, no console errors)"},
+  "seed_data_creation": "Temporary throwaway user sectest_<rand>@cortexa.ai created for the brute-force test and deleted in the test teardown; db.login_attempts fully cleared afterwards (verified count 0). No changes to daniyal@cortexa.ai.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "daniyal@cortexa.ai / CortexaPass!23 (from /app/memory/test_credentials.md) — valid, login 200 confirmed after the lockout test cleanup",
+  "context_for_next_testing_agent": "Regression suites now: tests/backend_test.py (it1), tests/test_stream_tools.py (it2 SSE/tool engine), tests/test_security.py (it3 JWT rotation, lockout, rate limiter, length cap, redaction, CORS, auth regression). Run `cd /app/backend && python -m pytest tests/test_security.py -v` (~25s, makes only 2 real LLM stream calls). LLM rate limit is 20 calls/user/5min and is in-process, so it resets on backend reload; test it by importing server and calling check_llm_rate() rather than burning real calls. ALWAYS run `mongosh --quiet test_database --eval 'db.login_attempts.deleteMany({})'` after any lockout test — the test file already does this in a finally block. Frontend: planting a junk value in localStorage['cortexa_token'] reliably reproduces the stale-token -> /auth redirect.",
+  "rca_of_the_issue": "N/A — no defects reproduced this round. Verified via source review + live API that the six audit fixes are in place and behave as specified."
+}

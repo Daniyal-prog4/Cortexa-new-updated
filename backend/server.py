@@ -7,7 +7,7 @@ Provides:
 - Basic CRUD for agents, memory items, tasks, history
 - Simulated system telemetry
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -20,7 +20,9 @@ from pathlib import Path
 import os
 import re
 import json
+import time
 import uuid
+from collections import defaultdict, deque
 import logging
 import random
 import bcrypt
@@ -37,7 +39,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
-JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
+JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALG = "HS256"
 JWT_EXP_HOURS = 24 * 7  # 7 days
 
@@ -87,7 +89,7 @@ class Device(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
     session_id: Optional[str] = None
 
 
@@ -159,6 +161,53 @@ class ActivityEntry(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+# ---------- Abuse protection ----------
+LLM_RATE_LIMIT = 20          # LLM calls per user
+LLM_RATE_WINDOW = 300        # seconds
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+_llm_calls: dict = defaultdict(deque)
+
+
+def check_llm_rate(user_id: str):
+    now = time.time()
+    dq = _llm_calls[user_id]
+    while dq and now - dq[0] > LLM_RATE_WINDOW:
+        dq.popleft()
+    if len(dq) >= LLM_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Rate limit reached — please wait a few minutes before sending more messages.")
+    dq.append(now)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+
+
+async def check_login_lockout(identifier: str):
+    doc = await db.login_attempts.find_one({"identifier": identifier})
+    if doc and doc.get("locked_until"):
+        locked_until = datetime.fromisoformat(doc["locked_until"])
+        if datetime.now(timezone.utc) < locked_until:
+            raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in a few minutes.")
+
+
+async def record_login_failure(identifier: str):
+    now = datetime.now(timezone.utc)
+    doc = await db.login_attempts.find_one({"identifier": identifier})
+    count = (doc.get("count", 0) + 1) if doc else 1
+    update = {"count": count, "last_at": now.isoformat()}
+    if count >= MAX_LOGIN_ATTEMPTS:
+        update["locked_until"] = (now + timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
+        update["count"] = 0
+    await db.login_attempts.update_one({"identifier": identifier}, {"$set": update}, upsert=True)
+
+
+async def clear_login_failures(identifier: str):
+    await db.login_attempts.delete_one({"identifier": identifier})
+
+
 # ---------- Auth helpers ----------
 def hash_pw(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
@@ -226,10 +275,14 @@ async def register(body: UserCreate):
 
 
 @api.post("/auth/login", response_model=AuthResponse)
-async def login(body: UserLogin):
+async def login(body: UserLogin, request: Request):
+    identifier = f"{_client_ip(request)}:{body.email.lower()}"
+    await check_login_lockout(identifier)
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not verify_pw(body.password, user["password"]):
+        await record_login_failure(identifier)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    await clear_login_failures(identifier)
     token = make_token(user["id"])
     return AuthResponse(
         token=token,
@@ -398,6 +451,7 @@ CORTEXA_SYSTEM = (
 async def chat(body: ChatRequest, user: dict = Depends(current_user)):
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
+    check_llm_rate(user["id"])
 
     session_id = body.session_id or str(uuid.uuid4())
 
@@ -414,9 +468,9 @@ async def chat(body: ChatRequest, user: dict = Depends(current_user)):
     try:
         response = await chat_client.send_message(UserMessage(text=body.message))
         reply_text = response if isinstance(response, str) else getattr(response, "content", str(response))
-    except Exception as e:
+    except Exception:
         logger.exception("LLM error")
-        raise HTTPException(status_code=502, detail=f"LLM error: {e}")
+        raise HTTPException(status_code=502, detail="Assistant temporarily unavailable. Please try again.")
 
     now = datetime.now(timezone.utc).isoformat()
     await db.chat_messages.insert_many([
@@ -479,6 +533,7 @@ def _sse(payload: dict) -> str:
 async def chat_stream(body: ChatRequest, user: dict = Depends(current_user)):
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
+    check_llm_rate(user["id"])
 
     session_id = body.session_id or str(uuid.uuid4())
     tool = detect_tool_request(body.message)
@@ -513,10 +568,10 @@ async def chat_stream(body: ChatRequest, user: dict = Depends(current_user)):
                 if isinstance(ev, TextDelta) and ev.content:
                     full += ev.content
                     yield _sse({"type": "delta", "text": ev.content})
-        except Exception as e:
+        except Exception:
             had_error = True
             logger.exception("LLM stream error")
-            yield _sse({"type": "error", "detail": str(e)})
+            yield _sse({"type": "error", "detail": "Assistant temporarily unavailable. Please try again."})
 
         now = datetime.now(timezone.utc).isoformat()
         docs = [{"id": str(uuid.uuid4()), "user_id": user_id, "session_id": session_id, "role": "user", "content": message, "created_at": now}]
@@ -583,13 +638,19 @@ async def resolve_tool(request_id: str, body: ToolResolve, user: dict = Depends(
 # ---------- Register router ----------
 app.include_router(api)
 
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',')]
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials='*' not in _cors_origins,
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_indexes():
+    await db.login_attempts.create_index("identifier")
 
 
 @app.on_event("shutdown")
