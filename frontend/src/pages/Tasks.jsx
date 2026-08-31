@@ -12,22 +12,50 @@ const statusColor = {
 export default function Tasks() {
   const [tasks, setTasks] = useState([]);
   const [title, setTitle] = useState("");
+  const [error, setError] = useState(null);
 
-  const load = async () => setTasks((await api.get("/tasks")).data);
+  const load = async () => {
+    try {
+      setTasks((await api.get("/tasks")).data);
+      setError(null);
+    } catch (e) {
+      console.error("Failed to load tasks:", e);
+      setError("Couldn't load tasks. Please check your connection and try again.");
+    }
+  };
   useEffect(() => { load(); }, []);
 
   const add = async () => {
     if (!title.trim()) return;
-    await api.post("/tasks", { title });
-    setTitle("");
-    load();
+    try {
+      await api.post("/tasks", { title });
+      setTitle("");
+      load();
+    } catch (e) {
+      console.error("Failed to add task:", e);
+      setError("Couldn't add that task. Please try again.");
+    }
   };
-  const setStatus = async (id, s) => { await api.patch(`/tasks/${id}?status_value=${s}`); load(); };
+  const setStatus = async (id, s) => {
+    try {
+      await api.patch(`/tasks/${id}?status_value=${s}`);
+      load();
+    } catch (e) {
+      console.error("Failed to update task:", e);
+      setError("Couldn't update that task. Please try again.");
+    }
+  };
 
   return (
     <div style={{ padding: "32px 40px", flex: 1, overflowY: "auto" }} data-testid="tasks-page">
       <h1 style={{ margin: 0, fontSize: 30, fontWeight: 500 }}>Tasks</h1>
       <p style={{ color: "var(--text-dim)", margin: "6px 0 22px" }}>Tasks Cortexa is running or has queued for you</p>
+
+      {error && (
+        <div className="cx-panel fade-in" style={{ padding: "12px 16px", marginBottom: 20, borderColor: "rgba(248,113,113,0.4)", color: "#fca5a5", fontSize: 14 }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       <div className="cx-panel" style={{ padding: 14, marginBottom: 20, display: "flex", gap: 12 }}>
         <input className="cx-input" placeholder="Describe a task…" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} data-testid="task-input" />

@@ -5,17 +5,39 @@ import { Plus, Trash2, Database } from "lucide-react";
 export default function Memory() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ key: "", value: "", category: "preference" });
+  const [error, setError] = useState(null);
 
-  const load = async () => setItems((await api.get("/memory")).data);
+  const load = async () => {
+    try {
+      setItems((await api.get("/memory")).data);
+      setError(null);
+    } catch (e) {
+      console.error("Failed to load memory:", e);
+      setError("Couldn't load memory. Please check your connection and try again.");
+    }
+  };
   useEffect(() => { load(); }, []);
 
   const add = async () => {
     if (!form.key || !form.value) return;
-    await api.post("/memory", form);
-    setForm({ key: "", value: "", category: "preference" });
-    load();
+    try {
+      await api.post("/memory", form);
+      setForm({ key: "", value: "", category: "preference" });
+      load();
+    } catch (e) {
+      console.error("Failed to add memory:", e);
+      setError("Couldn't save that memory. Please try again.");
+    }
   };
-  const remove = async (id) => { await api.delete(`/memory/${id}`); load(); };
+  const remove = async (id) => {
+    try {
+      await api.delete(`/memory/${id}`);
+      load();
+    } catch (e) {
+      console.error("Failed to delete memory:", e);
+      setError("Couldn't delete that memory. Please try again.");
+    }
+  };
 
   return (
     <div style={{ padding: "32px 40px", flex: 1, overflowY: "auto" }} data-testid="memory-page">
@@ -25,6 +47,12 @@ export default function Memory() {
           <p style={{ color: "var(--text-dim)", margin: "6px 0 0" }}>What Cortexa remembers about you across sessions</p>
         </div>
       </div>
+
+      {error && (
+        <div className="cx-panel fade-in" style={{ padding: "12px 16px", marginBottom: 20, borderColor: "rgba(248,113,113,0.4)", color: "#fca5a5", fontSize: 14 }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       <div className="cx-panel" style={{ padding: 18, marginBottom: 20, display: "grid", gridTemplateColumns: "1fr 2fr 160px 120px", gap: 12 }}>
         <input className="cx-input" placeholder="Key (e.g. preferred_editor)" value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} data-testid="memory-key-input" />

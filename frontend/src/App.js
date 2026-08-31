@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { WakeWordProvider, useWake } from "@/context/WakeWordContext";
 import Sidebar from "@/components/cortexa/Sidebar";
@@ -13,7 +13,6 @@ import Tasks from "@/pages/Tasks";
 import System from "@/pages/System";
 import History from "@/pages/History";
 import Settings from "@/pages/Settings";
-import Auth from "@/pages/Auth";
 
 function Shell({ children, hideRightPanel = false }) {
   return (
@@ -32,30 +31,19 @@ function Shell({ children, hideRightPanel = false }) {
   );
 }
 
-function Protected({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div style={{ height: "100vh", display: "grid", placeItems: "center", color: "var(--text-dim)" }}>
-        <span className="dots"><span/><span/><span/></span>
-      </div>
-    );
-  }
-  if (!user) return <Navigate to="/auth" replace />;
-  return children;
-}
-
+// NOTE: login/auth gating removed — the app now opens straight to Home.
+// Backend has no auth checks anymore either (see server.py current_user()),
+// so there's nothing left to protect here.
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/auth" element={<AuthRedirect><Auth /></AuthRedirect>} />
-      <Route path="/" element={<Protected><Shell><Home /></Shell></Protected>} />
-      <Route path="/agents" element={<Protected><Shell><Agents /></Shell></Protected>} />
-      <Route path="/memory" element={<Protected><Shell><Memory /></Shell></Protected>} />
-      <Route path="/tasks" element={<Protected><Shell><Tasks /></Shell></Protected>} />
-      <Route path="/system" element={<Protected><Shell><System /></Shell></Protected>} />
-      <Route path="/history" element={<Protected><Shell><History /></Shell></Protected>} />
-      <Route path="/settings" element={<Protected><Shell hideRightPanel><Settings /></Shell></Protected>} />
+      <Route path="/" element={<Shell><Home /></Shell>} />
+      <Route path="/agents" element={<Shell><Agents /></Shell>} />
+      <Route path="/memory" element={<Shell><Memory /></Shell>} />
+      <Route path="/tasks" element={<Shell><Tasks /></Shell>} />
+      <Route path="/system" element={<Shell><System /></Shell>} />
+      <Route path="/history" element={<Shell><History /></Shell>} />
+      <Route path="/settings" element={<Shell hideRightPanel><Settings /></Shell>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -69,13 +57,6 @@ function WakeWordManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wake?.wakeSignal]);
   return null;
-}
-
-function AuthRedirect({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
-  return children;
 }
 
 export default function App() {

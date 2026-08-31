@@ -229,18 +229,36 @@ def make_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
-async def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
-    if not creds:
-        raise HTTPException(status_code=401, detail="Missing token")
-    try:
-        payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALG])
-        user_id = payload["sub"]
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+DEFAULT_USER_ID = "local-user"
+
+
+async def _ensure_local_user() -> dict:
+    """Frontend login/auth UI has been removed (local/desktop single-user mode).
+    Every request now resolves to a single fixed local user instead of a JWT
+    Bearer token, so existing per-user_id data (agents/memory/tasks/etc.) still
+    works with the same query shape as before, but nothing can return 401.
+    The user is created on first use and reused after that.
+    """
+    user = await db.users.find_one({"id": DEFAULT_USER_ID}, {"_id": 0, "password": 0})
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        doc = {
+            "id": DEFAULT_USER_ID,
+            "email": "local@cortexa.app",
+            "name": "Local User",
+            "plan": "Pro",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.users.insert_one(doc)
+        await _seed_default_agents(DEFAULT_USER_ID)
+        user = {k: v for k, v in doc.items()}
     return user
+
+
+async def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
+    # NOTE: auth intentionally disabled — see _ensure_local_user() docstring.
+    # `creds` is accepted (auto_error=False) but ignored so old clients that
+    # still send a stale/expired Bearer token don't error either.
+    return await _ensure_local_user()
 
 
 # ---------- Health ----------
@@ -655,4 +673,8 @@ async def startup_indexes():
 
 @app.on_event("shutdown")
 async def shutdown_db():
-    client.close()
+    try:
+        if 'client' in globals() and hasattr(client, "close"):
+            client.close()
+    except Exception:
+        pass

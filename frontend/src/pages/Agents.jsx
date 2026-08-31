@@ -14,24 +14,44 @@ export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", role: "", description: "", color: "cyan", icon: "cog", tools: "" });
+  const [error, setError] = useState(null);
 
   const load = async () => {
-    const { data } = await api.get("/agents");
-    setAgents(data);
+    try {
+      const { data } = await api.get("/agents");
+      setAgents(data);
+      setError(null);
+    } catch (e) {
+      console.error("Failed to load agents:", e);
+      setError("Couldn't load agents. Please check your connection and try again.");
+    }
   };
   useEffect(() => { load(); }, []);
 
   const create = async () => {
     if (!form.name || !form.role) return;
-    await api.post("/agents", {
-      ...form,
-      tools: form.tools.split(",").map(s => s.trim()).filter(Boolean),
-    });
-    setForm({ name: "", role: "", description: "", color: "cyan", icon: "cog", tools: "" });
-    setShowForm(false);
-    load();
+    try {
+      await api.post("/agents", {
+        ...form,
+        tools: form.tools.split(",").map(s => s.trim()).filter(Boolean),
+      });
+      setForm({ name: "", role: "", description: "", color: "cyan", icon: "cog", tools: "" });
+      setShowForm(false);
+      load();
+    } catch (e) {
+      console.error("Failed to create agent:", e);
+      setError("Couldn't create the agent. Please try again.");
+    }
   };
-  const remove = async (id) => { await api.delete(`/agents/${id}`); load(); };
+  const remove = async (id) => {
+    try {
+      await api.delete(`/agents/${id}`);
+      load();
+    } catch (e) {
+      console.error("Failed to delete agent:", e);
+      setError("Couldn't delete the agent. Please try again.");
+    }
+  };
 
   return (
     <div style={{ padding: "32px 40px", flex: 1, overflowY: "auto" }} data-testid="agents-page">
@@ -44,6 +64,12 @@ export default function Agents() {
           <Plus size={16} /> New Agent
         </button>
       </div>
+
+      {error && (
+        <div className="cx-panel fade-in" style={{ padding: "12px 16px", marginBottom: 20, borderColor: "rgba(248,113,113,0.4)", color: "#fca5a5", fontSize: 14 }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       {showForm && (
         <div className="cx-panel fade-in" style={{ padding: 20, marginBottom: 20, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
